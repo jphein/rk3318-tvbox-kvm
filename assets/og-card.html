@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rk3318-tvbox-kvm — Open Graph card source (1200×630)</title>
+<!--
+  SOURCE for assets/og-card.png. Not linked from the site; kept in-tree so the card
+  is regenerable instead of a mystery binary. Author the card, rasterise it, point
+  og:image at the raster — crawlers do not accept SVG.
+
+  Regenerate (from the repo root):
+    google-chrome --headless --disable-gpu --hide-scrollbars \
+      --window-size=1200,630 --screenshot=assets/og-card.png \
+      assets/og-card.html
+
+  Then confirm it is still exactly 1200x630 — the og:image:width/height meta in
+  index.html declares those numbers, and a mismatch is a silently-bad preview:
+    python3 -c "import struct;d=open('assets/og-card.png','rb').read(33);\
+      print(struct.unpack('>II',d[16:24]))"
+
+  Deliberately self-contained (no webfont fetch, no external assets) for the same
+  reason as index.html: this project's whole security story is 'no auth, trusted
+  LAN only', so it should not be teaching browsers to phone third parties.
+  Fixed dark palette on purpose — an OG card has no prefers-color-scheme context.
+-->
+<style>
+  *{box-sizing:border-box;margin:0}
+  html,body{width:1200px;height:630px;overflow:hidden}
+  body{
+    background:#050309; color:#ece4d4;
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+    background-image:
+      radial-gradient(760px 520px at 18% -8%, rgba(150,110,60,.30), transparent 66%),
+      radial-gradient(620px 520px at 96% 10%, rgba(120,90,150,.20), transparent 64%),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='1' cy='1' r='.6' fill='rgba(180,160,120,0.05)'/%3E%3Ccircle cx='5' cy='3' r='.4' fill='rgba(140,120,80,0.04)'/%3E%3Ccircle cx='3' cy='6' r='.5' fill='rgba(100,70,140,0.03)'/%3E%3C/svg%3E");
+    display:grid; grid-template-columns:1fr 400px; align-items:center; gap:46px;
+    padding:0 66px;
+  }
+  .eyebrow{
+    font-size:19px; letter-spacing:.30em; text-transform:uppercase; color:#d4a574;
+    display:flex; align-items:center; gap:18px; margin-bottom:26px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;
+    background:linear-gradient(90deg,rgba(200,170,90,.55),transparent)}
+  /* nowrap + a size that fits 'rk3318-tvbox-kvm' on ONE line in the left
+     column; wrapping it split the wordmark and read badly at thumbnail size */
+  h1{font-size:66px; line-height:1.05; letter-spacing:.005em; font-weight:600; white-space:nowrap}
+  h1 .thin{color:#d4a574; font-weight:400}
+  p.pitch{font-size:26px; line-height:1.42; color:rgba(214,196,166,.90); margin-top:24px; max-width:30ch}
+  .chips{display:flex; gap:9px; margin-top:32px; flex-wrap:wrap}
+  .chip{
+    font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace; font-size:15px;
+    padding:7px 12px; border:1px solid rgba(200,170,90,.24); border-radius:3px;
+    background:rgba(21,13,24,.75); color:rgba(200,180,150,.80);
+  }
+  .chip b{color:#f0d890; font-weight:500}
+
+  /* right: the box, its front panel lit, feeding a screen */
+  .stage{display:flex; flex-direction:column; gap:24px; align-items:stretch}
+  .screen{
+    border:2px solid rgba(200,170,90,.34); border-radius:8px; background:#0b0810;
+    padding:20px 22px; box-shadow:0 26px 70px -30px rgba(0,0,0,.95);
+  }
+  .screen .bar{display:flex; gap:7px; margin-bottom:16px}
+  .screen .bar i{width:11px;height:11px;border-radius:50%;background:rgba(200,170,90,.28)}
+  .screen .bar i:first-child{background:#ff9090}
+  .screen .bar i:nth-child(2){background:#f0c060}
+  .screen .bar i:nth-child(3){background:#80e8a0}
+  .screen code{
+    display:block; font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+    font-size:16.5px; line-height:1.85; color:rgba(214,196,166,.82); white-space:pre;
+  }
+  .screen code b{color:#f0d890; font-weight:500}
+  .screen code s{color:#80e8a0; text-decoration:none}
+
+  /* the 4-digit front panel — the detail that makes it read as a real TV box */
+  .panel{
+    border:2px solid rgba(200,170,90,.26); border-radius:8px;
+    background:linear-gradient(180deg,#181020,#0d0812);
+    padding:16px 22px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .digits{
+    font-family:"JetBrains Mono","SF Mono",ui-monospace,monospace; font-size:46px;
+    letter-spacing:.10em; color:#f0d890;
+    text-shadow:0 0 20px rgba(240,216,144,.55), 0 0 46px rgba(240,216,144,.24);
+  }
+  .digits .cn{opacity:.55}
+  .leds{display:flex; gap:11px; align-items:center}
+  .leds i{width:10px;height:10px;border-radius:50%}
+  .l1{background:#80e8a0; box-shadow:0 0 12px #80e8a0}
+  .l2{background:#f0c060; box-shadow:0 0 12px #f0c060}
+  .l3{background:rgba(200,170,90,.22)}
+  .cap{
+    font-family:"JetBrains Mono",ui-monospace,monospace; font-size:14px;
+    color:rgba(200,180,150,.52); text-align:center; letter-spacing:.06em;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <div class="eyebrow">Armbian · no kernel rebuild</div>
+  <h1>rk3318<span class="thin">-tvbox-</span>kvm</h1>
+  <p class="pitch">A $20 Android TV box, turned into a browser-based IP-KVM.</p>
+  <div class="chips">
+    <span class="chip">HDMI in · <b>MS2109</b></span>
+    <span class="chip">USB HID gadget · <b>dwc2</b></span>
+    <span class="chip">stdlib-only UI · <b>10 MB</b></span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="screen">
+    <div class="bar"><i></i><i></i><i></i></div>
+    <code>$ ls /sys/class/udc/
+<b>ff580000.usb</b>
+$ ls /dev/hidg*
+<b>/dev/hidg0</b>  <b>/dev/hidg1</b>
+$ hid-send key ctrl+alt+delete
+<s>→ sent to the target</s></code>
+  </div>
+  <div class="panel">
+    <span class="digits">13<span class="cn">:</span>38</span>
+    <span class="leds"><i class="l1"></i><i class="l2"></i><i class="l3"></i></span>
+  </div>
+  <div class="cap">…and the front panel finally tells the time</div>
+</div>
+
+</body>
+</html>

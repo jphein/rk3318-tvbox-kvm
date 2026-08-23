@@ -6,6 +6,30 @@
 <title>rk3318-tvbox-kvm — a $20 TV box as a DIY IP-KVM</title>
 <meta name="description" content="Turn a cheap RK3318 Android TV box into a browser-based DIY IP-KVM, a DisplayLink crash-cart console, and a working front-panel clock. On Armbian, with no kernel rebuild.">
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#050309" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+
+<!-- Open Graph / Twitter — so a shared link renders as a card, not a bare URL.
+     og:url and og:image MUST stay absolute: crawlers do not resolve relative paths.
+     The card is a real 1200x630 raster (crawlers reject SVG); its source and the
+     regeneration command live in assets/og-card.html. If you change the image,
+     re-check that the declared width/height below still match the file. -->
+<link rel="canonical" href="https://jphein.github.io/rk3318-tvbox-kvm/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="rk3318-tvbox-kvm">
+<meta property="og:url" content="https://jphein.github.io/rk3318-tvbox-kvm/">
+<meta property="og:title" content="rk3318-tvbox-kvm — a $20 TV box as a DIY IP-KVM">
+<meta property="og:description" content="A cheap Android TV box turned into a browser-based IP-KVM: MS2109 HDMI capture, a dwc2 USB HID gadget presenting a keyboard and absolute pointer, and a ~370-line stdlib-only web UI joining them. Plus a DisplayLink crash-cart console and a front panel that finally tells the time.">
+<meta property="og:image" content="https://jphein.github.io/rk3318-tvbox-kvm/assets/og-card.png">
+<meta property="og:image:secure_url" content="https://jphein.github.io/rk3318-tvbox-kvm/assets/og-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The rk3318-tvbox-kvm wordmark beside a terminal showing the USB gadget coming up — ff580000.usb, /dev/hidg0 and /dev/hidg1 — over a lit four-digit front panel reading 13:38.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="rk3318-tvbox-kvm — a $20 TV box as a DIY IP-KVM">
+<meta name="twitter:description" content="MS2109 HDMI capture, a dwc2 USB HID gadget, and a stdlib-only web UI — a $20 Android TV box doing PiKVM's job on Armbian, with no kernel rebuild.">
+<meta name="twitter:image" content="https://jphein.github.io/rk3318-tvbox-kvm/assets/og-card.png">
 
 <!-- inline SVG favicon: a lit screen with a cursor block -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2.5' y='5' width='27' height='19' rx='2.5' fill='none' stroke='%23d4a574' stroke-width='2.4'/><rect x='7' y='10' width='7' height='3' fill='%23f0d890'/><rect x='7' y='16' width='12' height='3' fill='%2380e8a0'/><rect x='12' y='27' width='8' height='2.4' rx='1' fill='%23d4a574'/></svg>">
@@ -231,6 +255,21 @@ figcaption { font-size: .8rem; color: var(--text-muted); margin-top: .8rem; text
 .two h3 { font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; margin: 0; }
 .ok h3  { color: var(--emerald); }
 .gap h3 { color: var(--ruby); }
+
+/* ═══ share ═══ */
+.share-row { display: flex; gap: .55rem; flex-wrap: wrap; margin: 1.7rem 0 0; }
+.btn-share {
+  display: inline-flex; align-items: center; gap: .5rem; font: inherit; font-size: .88rem;
+  text-decoration: none; cursor: pointer; padding: .55rem 1rem; border-radius: 999px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  transition: border-color .18s, color .18s;
+}
+.btn-share:hover { border-color: var(--border-warm); color: var(--gold-bright); }
+/* monochrome + currentColor on purpose: brand colours would fight the palette */
+.btn-share svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+.btn-share.native { display: none; }   /* unhidden by JS when navigator.share exists */
+.share-sub { color: var(--text-muted); font-size: .86rem; margin: 1.1rem 0 0; max-width: 62ch; }
+.share-sub em { color: var(--text-dim); font-style: normal; }
 
 /* ═══ footer ═══ */
 footer {
@@ -527,6 +566,58 @@ ssh root@<b>&lt;box-ip&gt;</b> 'ls /sys/class/udc/ &amp;&amp; ls -l /dev/hidg0 /
   </div>
 </section>
 
+<section>
+  <h2 class="sect">Spread the word</h2>
+  <p class="sect-note">
+    There is nothing to buy here and nothing to sign up for — it's a hobby build and the
+    docs are the whole product. If it made you want to go dig a TV box out of a drawer,
+    that's the payoff. Send it on.
+  </p>
+  <!-- Every href is pre-encoded at author time and hardcoded to the deployed Pages URL.
+       If that URL ever changes, these AND the og:*/canonical meta in <head> must all move
+       together. Encodings were generated programmatically, not by hand. -->
+  <div class="share-row">
+    <a class="btn-share" target="_blank" rel="noopener"
+       aria-label="Submit rk3318-tvbox-kvm to Hacker News"
+       href="https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fjphein.github.io%2Frk3318-tvbox-kvm%2F&amp;t=Show%20HN%3A%20A%20%2420%20Android%20TV%20box%20as%20a%20browser-based%20IP-KVM%20%28Armbian%2C%20USB%20HID%20gadget%29">
+      <!-- fill-rule=evenodd, else the Y winds the same way as the square and the
+           whole mark fills solid -->
+      <svg viewBox="0 0 24 24" fill-rule="evenodd" aria-hidden="true"><path d="M3 3h18v18H3V3zm8.2 10.4L7.4 6.8h1.9l2.7 4.9 2.7-4.9h1.9l-3.8 6.6v4.6h-1.6v-4.6z"/></svg>
+      Hacker News</a>
+    <a class="btn-share" target="_blank" rel="noopener"
+       aria-label="Post rk3318-tvbox-kvm to Reddit"
+       href="https://www.reddit.com/submit?url=https%3A%2F%2Fjphein.github.io%2Frk3318-tvbox-kvm%2F&amp;title=I%20turned%20a%20%2420%20RK3318%20Android%20TV%20box%20into%20a%20browser-based%20IP-KVM%20%E2%80%94%20HDMI%20capture%2C%20a%20USB%20HID%20gadget%2C%20and%20a%20front%20panel%20that%20finally%20tells%20the%20time">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4l1 3.6c1.6.1 3.1.6 4.2 1.4a2 2 0 112.2 3.3c.1.4.1.7.1 1.1 0 3.4-4 6.1-9 6.1s-9-2.7-9-6.1c0-.4 0-.7.1-1.1a2 2 0 112.2-3.3c1.2-.9 2.9-1.4 4.7-1.5l1.2-4.4 3.3.9zM9 12.8a1.3 1.3 0 100 2.6 1.3 1.3 0 000-2.6zm6 0a1.3 1.3 0 100 2.6 1.3 1.3 0 000-2.6zm-6.3 4.5c.9.7 2 1 3.3 1s2.4-.3 3.3-1l.7.8c-1.1.9-2.5 1.3-4 1.3s-2.9-.4-4-1.3l.7-.8z"/></svg>
+      Reddit</a>
+    <a class="btn-share" target="_blank" rel="noopener"
+       aria-label="Share rk3318-tvbox-kvm on X"
+       href="https://twitter.com/intent/tweet?url=https%3A%2F%2Fjphein.github.io%2Frk3318-tvbox-kvm%2F&amp;text=A%20%2420%20Android%20TV%20box%20as%20a%20DIY%20IP-KVM%3A%20MS2109%20HDMI%20capture%2C%20a%20dwc2%20USB%20HID%20gadget%2C%20and%20a%20~370-line%20stdlib-only%20web%20UI.%20Plus%20two%20Armbian%20bugs%20found%20along%20the%20way.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.9 2H22l-6.8 7.8L23.3 22h-6.3l-4.9-6.4L6.4 22H3.3l7.3-8.3L1 2h6.5l4.4 5.9L18.9 2zm-1.1 18h1.7L7.4 3.8H5.6L17.8 20z"/></svg>
+      X</a>
+    <a class="btn-share" target="_blank" rel="noopener"
+       aria-label="Share rk3318-tvbox-kvm on Facebook"
+       href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fjphein.github.io%2Frk3318-tvbox-kvm%2F">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.4 21v-8.2h2.7l.4-3.2h-3.1V7.6c0-.9.3-1.6 1.6-1.6h1.7V3.2c-.3 0-1.3-.2-2.5-.2-2.5 0-4.2 1.5-4.2 4.3v2.3H7.3v3.2H10V21h3.4z"/></svg>
+      Facebook</a>
+    <button type="button" class="btn-share" onclick="copyThenOpen(this,'https://hackaday.com/submit-a-tip/')"
+            title="Copies the project link, then opens the Hackaday tips line — paste it there.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.7 6.3l-3.1 3.1-3-.5-.5-3 3.1-3.1a5 5 0 00-6.5 6.5L4 17l-1 4 4-1 7.7-7.7a5 5 0 006.5-6.5l.5.5z"/></svg>
+      <span class="lbl">Hackaday tip</span></button>
+    <button type="button" class="btn-share" onclick="copyOnly(this)"
+            title="Instagram has no web share — this copies the link to paste into a story or bio.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 2h9A5.5 5.5 0 0122 7.5v9A5.5 5.5 0 0116.5 22h-9A5.5 5.5 0 012 16.5v-9A5.5 5.5 0 017.5 2zm0 2A3.5 3.5 0 004 7.5v9A3.5 3.5 0 007.5 20h9a3.5 3.5 0 003.5-3.5v-9A3.5 3.5 0 0016.5 4h-9zM12 7a5 5 0 110 10 5 5 0 010-10zm0 2a3 3 0 100 6 3 3 0 000-6zm5.3-3.1a1.1 1.1 0 110 2.2 1.1 1.1 0 010-2.2z"/></svg>
+      <span class="lbl">Instagram</span></button>
+    <button type="button" class="btn-share native" onclick="nativeShare()">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16a3 3 0 00-2.2 1L8.9 13a3 3 0 000-2l6.9-4a3 3 0 10-1-1.7L7.9 9.2a3 3 0 100 5.6l6.9 3.9A3 3 0 1018 16z"/></svg>
+      <span class="lbl">Share…</span></button>
+  </div>
+  <p class="share-sub">
+    The Instagram button copies the link (paste it in a story or bio); the Hackaday button
+    copies it and opens their tips line. On a phone, <em>Share…</em> opens your native share
+    sheet.
+  </p>
+</section>
+
 <footer>
   <!-- FOOTER: the house share-footer idiom -- centered, muted, small, subtle top
        rule, a dot-separated siblings row, then a single closing line.
@@ -548,5 +639,49 @@ ssh root@<b>&lt;box-ip&gt;</b> 'ls /sys/class/udc/ &amp;&amp; ls -l /dev/hidg0 /
 </footer>
 
 </div>
+
+<script>
+/* Share helpers. Inline on purpose -- the page has zero external resource loads,
+   and that is a deliberate property of a project whose whole security story is
+   "no auth, trusted LAN only": it should not be teaching browsers to phone
+   third parties just to render a docs page. */
+const SHARE_URL = "https://jphein.github.io/rk3318-tvbox-kvm/";
+
+function flash(btn, txt) {
+  const l = btn.querySelector(".lbl") || btn;
+  const old = l.textContent;
+  l.textContent = txt;
+  setTimeout(() => { l.textContent = old; }, 1800);
+}
+/* clipboard needs a secure context; degrade to a visible message rather than
+   silently doing nothing, so the button is never a dead end */
+function copyOnly(btn) {
+  if (!navigator.clipboard?.writeText) return flash(btn, "Copy unavailable");
+  navigator.clipboard.writeText(SHARE_URL)
+    .then(() => flash(btn, "Copied ✓"))
+    .catch(() => flash(btn, "Copy failed"));
+}
+function copyThenOpen(btn, url) {
+  const open = () => window.open(url, "_blank", "noopener");
+  if (!navigator.clipboard?.writeText) { flash(btn, "Copy unavailable"); return open(); }
+  navigator.clipboard.writeText(SHARE_URL)
+    .then(() => flash(btn, "Link copied ✓"))
+    .catch(() => {})
+    .finally(open);
+}
+function nativeShare() {
+  navigator.share({
+    title: "rk3318-tvbox-kvm — a $20 TV box as a DIY IP-KVM",
+    text: "MS2109 HDMI capture, a dwc2 USB HID gadget, and a stdlib-only web UI. "
+        + "A $20 Android TV box doing PiKVM's job on Armbian, with no kernel rebuild.",
+    url: SHARE_URL
+  }).catch(() => {});
+}
+/* hidden by default in CSS; only revealed where the API actually exists, so it
+   can never present a button that does nothing */
+if (navigator.share) {
+  document.querySelector(".btn-share.native").style.display = "inline-flex";
+}
+</script>
 </body>
 </html>
