@@ -1,0 +1,180 @@
+#!/bin/bash
+# panel-display-setup -- bring up the RK3318 front-panel FD628 display.
+#
+# Armbian's rockchip-rk3318-box-led-conf2.dtbo has two bugs that leave the panel
+# dead (still unfixed upstream as of the rockchip64-7.2 patch series):
+#
+#   1. display@24 has reg = <0x24> -- an I2C slave address -- but its parent bus
+#      is spi-gpio with num-chipselects = <1>. The SPI core reads reg as the
+#      chip-select index and range-checks it, so the device never registers:
+#          spi_gpio i2c-aux-display: cs36 >= max 1
+#          spi_master spi0: Failed to create SPI device for /i2c-aux-display/display@24
+#
+#   2. compatible = "fdhisi,fd628" alone matches no driver. The tm16xx binding
+#      only allows fd628 in the two-item form with "titanmec,tm1628", and it is
+#      that fallback which carries the actual driver match.
+#
+# This script applies a corrective DT overlay at RUNTIME via configfs
+# (CONFIG_OF_CONFIGFS=y on this kernel), so it needs neither a reboot nor an
+# edit to /boot/armbianEnv.txt -- deliberate, because that file is shared with
+# other work on this box (user_overlays).
+#
+# It is idempotent: if the DT is already correct -- e.g. because the overlay was
+# later moved into u-boot's user_overlays, which is the cleaner permanent form --
+# it skips straight to loading the driver and setting triggers.
+#
+# A note on why the modprobe is not optional: the SPI modalias is derived from
+# the FIRST compatible string, giving "spi:fd628", which no module claims. The
+# OF match on "titanmec,tm1628" succeeds, but only once the module is already
+# resident -- so autoload silently does nothing and the module must be loaded
+# explicitly.
+
+set -u
+
+DTBO=/usr/local/share/panel-display/rk3318-fd628-fix.dtbo
+NODE=/proc/device-tree/i2c-aux-display/display@24
+CFG=/sys/kernel/config/device-tree/overlays/panel-fd628
+LEDS=/sys/class/leds/display
+PLATDEV=i2c-aux-display
+LAN_IF=${LAN_IF:-eth0}
+WLAN_IF=${WLAN_IF:-wlan0}
+
+log() { echo "panel-display: $*"; }
+
+# --- 1. is the device tree already correct? -------------------------------
+dt_reg_is_zero() {
+    [ -r "$NODE/reg" ] || return 1
+    # reg is a single big-endian cell; treat all-zero as "already fixed"
+    [ "$(od -An -tx1 "$NODE/reg" | tr -d ' \n')" = "00000000" ]
+}
+dt_has_tm1628() {
+    [ -r "$NODE/compatible" ] &&
+        tr '\0' '\n' < "$NODE/compatible" | grep -qx 'titanmec,tm1628'
+}
+
+if dt_reg_is_zero && dt_has_tm1628; then
+    log "device tree already correct, no overlay needed"
+else
+    if [ ! -r "$DTBO" ]; then
+        log "ERROR: $DTBO missing, cannot correct the device tree"
+        exit 1
+    fi
+    if [ -d "$CFG" ]; then
+        log "overlay already loaded in configfs"
+    else
+        log "applying corrective overlay via configfs"
+        mkdir -p "$CFG" || { log "ERROR: configfs mkdir failed (CONFIG_OF_CONFIGFS?)"; exit 1; }
+        if ! cat "$DTBO" > "$CFG/dtbo"; then
+            log "ERROR: overlay rejected"
+            rmdir "$CFG" 2>/dev/null
+            exit 1
+        fi
+        sleep 1
+    fi
+    need_reprobe=1
+fi
+
+# --- 1b. make sure spi_gpio is actually bound to the bus ------------------
+# spi-gpio only scans its DT children at probe time, so a corrected
+# reg/compatible is invisible until it re-probes. Handle all three states:
+# driver not loaded, loaded but unbound, and bound-with-a-failed-child.
+modprobe spi_gpio 2>/dev/null
+DRV=/sys/bus/platform/drivers/spi_gpio
+if [ ! -d "$DRV" ]; then
+    log "ERROR: spi_gpio driver not available (CONFIG_SPI_GPIO?)"
+    exit 1
+fi
+if [ -e "$DRV/$PLATDEV" ]; then
+    if [ "${need_reprobe:-0}" = 1 ]; then
+        log "re-probing spi_gpio so it rescans its children"
+        echo "$PLATDEV" > "$DRV/unbind" 2>/dev/null
+        sleep 1
+        echo "$PLATDEV" > "$DRV/bind" 2>/dev/null
+        sleep 2
+    fi
+else
+    # not bound at all (never probed, or something unbound it)
+    log "binding spi_gpio to $PLATDEV"
+    echo "$PLATDEV" > "$DRV/bind" 2>/dev/null
+    sleep 2
+fi
+
+# the SPI child must exist before the display driver can bind to anything
+spidev=""
+for _ in 1 2 3 4 5; do
+    spidev=$(ls /sys/bus/spi/devices/ 2>/dev/null | head -1)
+    [ -n "$spidev" ] && break
+    sleep 1
+done
+if [ -z "$spidev" ]; then
+    log "ERROR: no SPI device registered on the bus"
+    log "  this is the original conf2 failure -- check: dmesg | grep -i 'cs.* >= max'"
+    exit 1
+fi
+log "spi child registered: $spidev"
+
+# --- 2. driver + trigger modules -----------------------------------------
+modprobe tm16xx_spi    2>/dev/null || log "WARNING: tm16xx_spi did not load"
+modprobe ledtrig-timer  2>/dev/null
+modprobe ledtrig-netdev 2>/dev/null
+
+# wait for the LED class devices to appear
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -d "$LEDS" ] && break
+    sleep 1
+done
+if [ ! -d "$LEDS" ]; then
+    log "ERROR: $LEDS never appeared -- driver did not bind"
+    log "  spi devices: $(ls /sys/bus/spi/devices/ 2>/dev/null || echo none)"
+    exit 1
+fi
+log "display bound: num_chars=$(cat "$LEDS/num_chars" 2>/dev/null)"
+
+# --- 3. panel on ----------------------------------------------------------
+cat "$LEDS/max_brightness" > "$LEDS/brightness" 2>/dev/null
+
+# --- 4. triggers ----------------------------------------------------------
+set_trigger() {          # set_trigger <led> <trigger>
+    local led=$1 trig=$2
+    [ -e "$LEDS::$led/trigger" ] || { log "no such led: $led"; return 1; }
+    echo "$trig" > "$LEDS::$led/trigger" 2>/dev/null || { log "trigger $trig rejected for $led"; return 1; }
+}
+netdev_trigger() {       # netdev_trigger <led> <iface> <link|activity>
+    # NB: keep these on separate lines. `local` is a builtin, so all of its
+    # arguments are word-expanded before any assignment happens -- referencing
+    # $led in the same `local` as its assignment trips `set -u`.
+    local led=$1 iface=$2 mode=$3
+    local p="$LEDS::$led"
+    set_trigger "$led" netdev || return 1
+    echo "$iface" > "$p/device_name" 2>/dev/null
+    case $mode in
+        link)     echo 1 > "$p/link" 2>/dev/null ;;
+        activity) echo 1 > "$p/tx" 2>/dev/null; echo 1 > "$p/rx" 2>/dev/null
+                  echo 50 > "$p/interval" 2>/dev/null ;;
+    esac
+}
+
+# power: solid on for as long as the box is up
+set_trigger power default-on
+
+# colon: 1 Hz blink, driven in-kernel so it keeps ticking even if the clock
+# service is stopped
+if set_trigger colon timer; then
+    echo 500 > "$LEDS::colon/delay_on"  2>/dev/null
+    echo 500 > "$LEDS::colon/delay_off" 2>/dev/null
+fi
+
+# lan: link state on the wired interface
+netdev_trigger lan "$LAN_IF" link
+
+# the two wlan segments are a hi/lo pair on this panel: use one for link and
+# one for traffic so together they read as a signal indicator
+netdev_trigger wlan-lo "$WLAN_IF" link
+netdev_trigger wlan-hi "$WLAN_IF" activity
+
+log "setup complete"
+for l in power colon lan wlan-lo wlan-hi; do
+    [ -e "$LEDS::$l/trigger" ] &&
+        log "  $l -> $(grep -o '\[[a-z0-9-]*\]' "$LEDS::$l/trigger" 2>/dev/null | tr -d '[]')"
+done
+exit 0

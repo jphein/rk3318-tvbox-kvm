@@ -1,0 +1,16 @@
+[Unit]
+Description=RK3318 front-panel clock
+Requires=panel-display.service
+After=panel-display.service time-sync.target
+Wants=time-sync.target
+ConditionPathIsWritable=/sys/class/leds/display/message
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/panel-clock
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

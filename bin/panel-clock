@@ -1,0 +1,23 @@
+#!/bin/bash
+# panel-clock -- write HHMM to the RK3318 front-panel display once a minute.
+#
+# The ':' between hours and minutes is NOT a character -- this panel has only 4
+# digit positions. The colon is a separate icon LED (display::colon) driven by
+# the kernel's own timer trigger, set up by panel-display-setup, so it keeps
+# blinking independently of this loop.
+#
+# Sleeps to the top of each minute rather than a fixed 60s so the display never
+# drifts away from the wall clock.
+
+set -u
+LEDS=/sys/class/leds/display
+
+[ -w "$LEDS/message" ] || { echo "panel-clock: $LEDS/message not writable"; exit 1; }
+
+# repaint immediately on start, then align to minute boundaries
+while :; do
+    date +%H%M > "$LEDS/message" 2>/dev/null ||
+        echo "panel-clock: write failed" >&2
+    # seconds remaining until the next minute (never 0, so we can't spin)
+    sleep $(( 60 - $(date +%-S) ))
+done

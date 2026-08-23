@@ -1,0 +1,29 @@
+/dts-v1/;
+/plugin/;
+
+/* Corrects two bugs in Armbian rockchip-rk3318-box-led-conf2.dtbo, which leave
+ * the front-panel display dead:
+ *
+ *  1. reg = <0x24> is an I2C slave address, but the parent bus is spi-gpio with
+ *     num-chipselects = <1>. The SPI core reads reg as the chip-select index and
+ *     range-checks it (drivers/spi/spi.c), so 0x24 = 36 fails:
+ *         spi_gpio i2c-aux-display: cs36 >= max 1
+ *         spi_master spi0: Failed to create SPI device for /i2c-aux-display/display@24
+ *     For a single-CS bus the only legal value is 0.
+ *
+ *  2. compatible = "fdhisi,fd628" alone matches no driver. Per the tm16xx
+ *     binding, fd628 exists only in the two-item form with the tm1628 fallback,
+ *     and it is the fallback that actually carries the driver match.
+ *
+ * (The node is even NAMED "i2c-aux-display" while being an spi-gpio bus -- the
+ * fingerprint of an I2C example copy-pasted onto SPI.)
+ */
+/ {
+	fragment@0 {
+		target-path = "/i2c-aux-display/display@24";
+		__overlay__ {
+			reg = <0x00>;
+			compatible = "fdhisi,fd628", "titanmec,tm1628";
+		};
+	};
+};

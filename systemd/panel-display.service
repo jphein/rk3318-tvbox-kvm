@@ -1,0 +1,15 @@
+[Unit]
+Description=RK3318 front-panel display (FD628) setup
+Documentation=file:///usr/local/share/doc/rk3318-tvbox-kvm/07-front-panel-display.md
+After=network.target
+Wants=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/panel-display-setup
+# LAN_IF / WLAN_IF can be overridden here if interfaces are renamed
+Environment=LAN_IF=eth0 WLAN_IF=wlan0
+
+[Install]
+WantedBy=multi-user.target
