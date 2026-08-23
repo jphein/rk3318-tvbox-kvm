@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rk3318-tvbox-kvm — a $20 TV box as a DIY IP-KVM</title>
+<meta name="description" content="Turn a cheap RK3318 Android TV box into a browser-based DIY IP-KVM, a DisplayLink crash-cart console, and a working front-panel clock. On Armbian, with no kernel rebuild.">
+<meta name="color-scheme" content="light dark">
+
+<!-- inline SVG favicon: a lit screen with a cursor block -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2.5' y='5' width='27' height='19' rx='2.5' fill='none' stroke='%23d4a574' stroke-width='2.4'/><rect x='7' y='10' width='7' height='3' fill='%23f0d890'/><rect x='7' y='16' width='12' height='3' fill='%2380e8a0'/><rect x='12' y='27' width='8' height='2.4' rx='1' fill='%23d4a574'/></svg>">
+
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   "technical grimoire" — a classical serif over terminal monospace,
+   gold rules on void. Light theme is the same relationships rendered
+   as ink on aged parchment rather than a separate design.
+
+   Fully self-contained: no webfonts, no CDN, no external requests.
+   Cinzel is used if the visitor happens to have it; otherwise the
+   stack falls through to classical serifs that hold the same feeling.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── LIGHT (default, on bare :root so nothing is left undefined) ── */
+:root {
+  --void:        #f4efe4;
+  --surface:     #fbf7ee;
+  --surface-alt: #efe7d6;
+  --border:      rgba(120, 88, 40, 0.22);
+  --border-warm: rgba(120, 88, 40, 0.40);
+  --text:        #241c12;
+  --text-dim:    rgba(50, 38, 24, 0.72);
+  --text-muted:  rgba(60, 46, 30, 0.52);
+  --gold:        #8a5f1e;
+  --gold-bright: #6d4a14;
+  --emerald:     #17663a;
+  --ruby:        #a1281f;
+  --ruby-bg:     rgba(161, 40, 31, 0.07);
+  --amber:       #8a6206;
+  --amber-bg:    rgba(138, 98, 6, 0.08);
+  --sapphire:    #1c4f86;
+  --grain-op:    0.30;
+  --shadow:      0 1px 2px rgba(60,40,10,.06), 0 8px 24px -12px rgba(60,40,10,.14);
+}
+
+/* ── DARK — only the tokens change, never the rules ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --void:        #050309;
+    --surface:     #150d18;
+    --surface-alt: #1d1220;
+    --border:      rgba(200, 170, 90, 0.13);
+    --border-warm: rgba(200, 170, 90, 0.32);
+    --text:        #ece4d4;
+    --text-dim:    rgba(214, 196, 166, 0.80);
+    --text-muted:  rgba(200, 180, 150, 0.55);
+    --gold:        #d4a574;
+    --gold-bright: #f0d890;
+    --emerald:     #80e8a0;
+    --ruby:        #ff9090;
+    --ruby-bg:     rgba(255, 144, 144, 0.09);
+    --amber:       #f0c060;
+    --amber-bg:    rgba(240, 192, 96, 0.08);
+    --sapphire:    #90c8ff;
+    --grain-op:    1;
+    --shadow:      0 1px 2px rgba(0,0,0,.5), 0 10px 34px -14px rgba(0,0,0,.75);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--text);
+  font: 16px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+        Georgia, "Times New Roman", serif;
+  font-feature-settings: "liga" 1, "kern" 1;
+  overflow-x: hidden;
+}
+
+/* atmosphere: a warm pool of light top-left, plus a fine grain */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 22% 0%,  rgba(150, 110, 60, .16), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 92% 12%, rgba(120,  90,150, .11), transparent 70%);
+}
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  opacity: var(--grain-op);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='1' cy='1' r='.6' fill='rgba(180,160,120,0.035)'/%3E%3Ccircle cx='5' cy='3' r='.4' fill='rgba(140,120,80,0.03)'/%3E%3Ccircle cx='3' cy='6' r='.5' fill='rgba(100,70,140,0.022)'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 62rem; margin: 0 auto; padding: 0 1.4rem; }
+
+/* ── type ── */
+h1, h2, h3, .display {
+  font-family: Cinzel, "Trajan Pro", "Optima", "Palatino Linotype", Palatino, serif;
+  font-weight: 600;
+  letter-spacing: .03em;
+  line-height: 1.2;
+}
+code, pre, kbd, .mono, table { font-family: "JetBrains Mono", "SF Mono", "Cascadia Code",
+  ui-monospace, Menlo, Consolas, monospace; }
+
+a { color: var(--gold-bright); text-decoration: none;
+    border-bottom: 1px solid var(--border-warm); transition: border-color .18s, color .18s; }
+a:hover { color: var(--text); border-bottom-color: currentColor; }
+
+/* ═══ hero ═══ */
+header.hero { padding: clamp(3rem, 9vw, 6.5rem) 0 clamp(2rem, 5vw, 3.5rem); }
+
+.eyebrow {
+  font-family: Cinzel, Palatino, serif; font-size: .7rem; letter-spacing: .3em;
+  text-transform: uppercase; color: var(--gold); margin: 0 0 1.1rem;
+  display: flex; align-items: center; gap: .8rem;
+}
+.eyebrow::after { content: ""; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--border-warm), transparent); }
+
+h1 { font-size: clamp(2.1rem, 7.2vw, 4rem); margin: 0 0 .1em; }
+h1 .thin { color: var(--gold); font-weight: 400; }
+
+.tagline { font-size: clamp(1.02rem, 2.4vw, 1.28rem); color: var(--text-dim);
+  max-width: 44ch; margin: 1.1rem 0 0; }
+
+.hero-meta { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1.9rem; }
+.chip {
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .74rem;
+  padding: .34rem .7rem; border: 1px solid var(--border); border-radius: 2px;
+  background: var(--surface); color: var(--text-muted); white-space: nowrap;
+}
+.chip b { color: var(--gold-bright); font-weight: 500; }
+
+/* ═══ the security warning — deliberately the loudest thing here ═══ */
+.warn {
+  margin: 2.6rem 0 0; padding: 1.3rem 1.5rem;
+  background: var(--ruby-bg);
+  border: 1px solid var(--ruby); border-left-width: 4px; border-radius: 3px;
+  box-shadow: var(--shadow);
+}
+.warn h2 {
+  font-size: .95rem; margin: 0 0 .6rem; color: var(--ruby);
+  letter-spacing: .12em; text-transform: uppercase;
+  display: flex; align-items: center; gap: .55rem;
+}
+.warn h2 svg { flex: none; }
+.warn p { margin: .5rem 0 0; color: var(--text-dim); font-size: .95rem; }
+.warn strong { color: var(--text); }
+.warn ul { margin: .7rem 0 0; padding-left: 1.15rem; color: var(--text-dim); font-size: .93rem; }
+.warn li { margin: .3rem 0; }
+
+/* ═══ sections ═══ */
+section { padding: clamp(2.4rem, 6vw, 4rem) 0; }
+section + section { border-top: 1px solid var(--border); }
+
+h2.sect { font-size: clamp(1.25rem, 3.4vw, 1.7rem); margin: 0 0 .35em; }
+.sect-note { color: var(--text-muted); font-size: .93rem; margin: 0 0 1.8rem; max-width: 62ch; }
+
+/* ═══ capability cards ═══ */
+.cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1.25rem 1.3rem; position: relative; overflow: hidden;
+  transition: border-color .2s, transform .2s;
+}
+.card:hover { border-color: var(--border-warm); transform: translateY(-2px); }
+.card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px;
+  background: var(--accent, var(--gold)); opacity: .8; }
+.card h3 { font-size: 1rem; margin: 0 0 .5rem; color: var(--accent, var(--gold-bright)); }
+.card p { margin: 0; font-size: .92rem; color: var(--text-dim); }
+.card .how { display: block; margin-top: .8rem; font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: .74rem; color: var(--text-muted); line-height: 1.5; }
+
+/* ═══ tables & code — must scroll inside themselves, never the page ═══ */
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border); border-radius: 3px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 34rem; }
+th, td { padding: .6rem .85rem; text-align: left; border-bottom: 1px solid var(--border); }
+th { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+     color: var(--gold); font-weight: 500; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td b { color: var(--gold-bright); font-weight: 500; }
+.yes { color: var(--emerald); } .no { color: var(--text-muted); }
+
+pre {
+  margin: 0; padding: 1.05rem 1.2rem; overflow-x: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  font-size: .8rem; line-height: 1.62; color: var(--text-dim);
+}
+pre b { color: var(--gold-bright); font-weight: 500; }
+pre .c { color: var(--text-muted); font-style: italic; }
+p code, li code, td code {
+  font-size: .84em; padding: .1em .34em; border-radius: 2px;
+  background: var(--surface-alt); color: var(--gold-bright);
+}
+
+/* ═══ architecture diagram ═══ */
+figure.arch { margin: 0; }
+figure.arch svg { width: 100%; height: auto; display: block; }
+figcaption { font-size: .8rem; color: var(--text-muted); margin-top: .8rem; text-align: center; }
+
+/* ═══ doc index ═══ */
+.docs { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.doc {
+  display: flex; gap: .85rem; align-items: baseline;
+  padding: .8rem 1rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text); border-bottom: 1px solid var(--border);
+}
+.doc:hover { border-color: var(--border-warm); color: var(--text); }
+.doc .n { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .72rem;
+  color: var(--gold); flex: none; }
+.doc .t { font-size: .89rem; }
+.doc .t small { display: block; color: var(--text-muted); font-size: .78rem; margin-top: .12rem; }
+
+/* ═══ bug callouts ═══ */
+.bug { background: var(--amber-bg); border: 1px solid var(--border-warm);
+  border-left: 3px solid var(--amber); border-radius: 3px; padding: 1.1rem 1.3rem; }
+.bug + .bug { margin-top: .9rem; }
+.bug h3 { font-size: .95rem; margin: 0 0 .45rem; color: var(--amber); }
+.bug p { margin: 0; font-size: .9rem; color: var(--text-dim); }
+
+/* ═══ verified / not verified ═══ */
+.two { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+.two ul { margin: .6rem 0 0; padding-left: 1.1rem; font-size: .88rem; color: var(--text-dim); }
+.two li { margin: .32rem 0; }
+.two h3 { font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; margin: 0; }
+.ok h3  { color: var(--emerald); }
+.gap h3 { color: var(--ruby); }
+
+/* ═══ footer ═══ */
+footer {
+  text-align: center; padding: 2.6rem 0 3.2rem; margin-top: 1rem;
+  border-top: 1px solid var(--border); color: var(--text-muted); font-size: .78rem;
+}
+footer .siblings { margin-bottom: .7rem; }
+footer .siblings a { color: var(--gold); border: none; }
+footer .siblings a:hover { color: var(--text); }
+footer .line { font-style: italic; opacity: .85; }
+footer .lic { margin-top: .9rem; font-size: .72rem; opacity: .7; }
+
+/* ═══ motion: one orchestrated load, then stillness ═══ */
+@media (prefers-reduced-motion: no-preference) {
+  .rise { animation: rise .7s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow rise">Armbian · RK3318 · no kernel rebuild</p>
+  <h1 class="rise" style="animation-delay:.06s">rk3318<span class="thin">-tvbox-</span>kvm</h1>
+  <p class="tagline rise" style="animation-delay:.12s">
+    A ~$20 Android TV box, turned into a browser-based IP-KVM, a lapdock crash-cart
+    console, and a front panel that finally tells the time.
+  </p>
+  <div class="hero-meta rise" style="animation-delay:.18s">
+    <span class="chip"><b>RK3318</b> / RK3328</span>
+    <span class="chip">HDMI in via <b>MS2109</b></span>
+    <span class="chip">USB HID gadget via <b>dwc2</b></span>
+    <span class="chip">python3 <b>stdlib only</b></span>
+    <span class="chip">~<b>10 MB</b> RSS</span>
+  </div>
+
+  <!-- The single most important thing on this page. -->
+  <div class="warn rise" style="animation-delay:.24s">
+    <h2>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.5 15 14H1L8 1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M8 6v3.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="8" cy="11.8" r=".95" fill="currentColor"/>
+      </svg>
+      The web KVM UI has no authentication
+    </h2>
+    <p>
+      The UI binds <code>0.0.0.0:8081</code> with <strong>no login, no TLS, and no access
+      control of any kind</strong>. Anyone who can reach that port has a keyboard and mouse
+      on whatever machine is cabled to the gadget port. The MJPEG stream on
+      <code>:8080</code> is equally open.
+    </p>
+    <ul>
+      <li><strong>Trusted LAN or management VLAN only.</strong> Never port-forward it.</li>
+      <li>For remote access, put it behind something that <em>does</em> authenticate —
+          a VPN, an SSH tunnel, or an authenticating reverse proxy.</li>
+      <li>Want a hardened, authenticated stack instead? Use
+          <a href="https://pikvm.org/">PiKVM / kvmd</a>. This project deliberately does not
+          compete with it.</li>
+    </ul>
+    <p>
+      There are no credentials anywhere in this project, because there is no auth to have
+      credentials for. Don't mistake that for safety.
+    </p>
+  </div>
+</header>
+
+<section>
+  <h2 class="sect">Three separate things</h2>
+  <p class="sect-note">
+    Take only the parts you want — the capture, the gadget, the console and the front panel
+    are independent, and none requires the others.
+  </p>
+  <div class="cards">
+    <div class="card" style="--accent: var(--sapphire)">
+      <h3>IP-KVM</h3>
+      <p>See and control a target PC from a browser, with an absolute pointer so there's no
+         acceleration drift to fight.</p>
+      <span class="how">MS2109 → ustreamer :8080<br>/dev/hidg0,1 ← kvm-ui :8081</span>
+    </div>
+    <div class="card" style="--accent: var(--emerald)">
+      <h3>Crash-cart console</h3>
+      <p>A DisplayLink lapdock as a real local console for the box itself. One cable, screen
+         and keyboard and trackpad.</p>
+      <span class="how">evdi + DisplayLink + GNOME<br>+ the invisible-cursor fix</span>
+    </div>
+    <div class="card" style="--accent: var(--amber)">
+      <h3>Front panel</h3>
+      <p>The box's own 4-digit display shows a clock; its LEDs track link and traffic.
+         Armbian ships this broken.</p>
+      <span class="how">FD628 → tm16xx<br>+ a corrective DT overlay</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="sect">How it fits together</h2>
+  <p class="sect-note">
+    Video and input travel completely separate paths and meet only in the browser. The UI
+    references the MJPEG stream directly rather than proxying it, so nothing is copied
+    through Python.
+  </p>
+  <figure class="arch">
+    <svg viewBox="0 0 760 260" role="img"
+         aria-label="Architecture: a target PC connects by HDMI to a capture stick inside the TV box, which feeds ustreamer on port 8080; the box's dwc2 USB gadget presents a keyboard and mouse back to the target PC; a browser talks to kvm-ui on port 8081, which reads the stream and writes HID reports.">
+      <defs>
+        <style>
+          .bx { fill: var(--surface); stroke: var(--border-warm); stroke-width: 1.2; }
+          .bxi{ fill: none; stroke: var(--border); stroke-width: 1.1; stroke-dasharray: 4 3; }
+          .lb { fill: var(--text-dim); font: 11px "JetBrains Mono", ui-monospace, monospace; }
+          .lh { fill: var(--gold-bright); font: 600 12px Cinzel, Palatino, serif; letter-spacing:.06em; }
+          .sm { fill: var(--text-muted); font: 9.5px "JetBrains Mono", ui-monospace, monospace; }
+          .ar { stroke-width: 1.5; fill: none; }
+        </style>
+        <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0 0.8 L7 4 L0 7.2 Z" fill="var(--gold)"/>
+        </marker>
+      </defs>
+
+      <!-- target PC -->
+      <rect class="bx" x="8" y="78" width="112" height="92" rx="4"/>
+      <text class="lh" x="64" y="106" text-anchor="middle">target PC</text>
+      <text class="sm" x="64" y="126" text-anchor="middle">the machine you</text>
+      <text class="sm" x="64" y="139" text-anchor="middle">need to fix</text>
+
+      <!-- the box -->
+      <rect class="bxi" x="176" y="16" width="384" height="228" rx="6"/>
+      <text class="lh" x="368" y="38" text-anchor="middle">RK3318 TV box</text>
+
+      <rect class="bx" x="196" y="56" width="150" height="46" rx="3"/>
+      <text class="lb" x="271" y="76" text-anchor="middle">MS2109 capture</text>
+      <text class="sm" x="271" y="91" text-anchor="middle">on the xHCI port</text>
+
+      <rect class="bx" x="386" y="56" width="150" height="46" rx="3"/>
+      <text class="lb" x="461" y="76" text-anchor="middle">ustreamer</text>
+      <text class="sm" x="461" y="91" text-anchor="middle">MJPEG :8080</text>
+
+      <rect class="bx" x="196" y="132" width="150" height="46" rx="3"/>
+      <text class="lb" x="271" y="152" text-anchor="middle">dwc2 UDC</text>
+      <text class="sm" x="271" y="167" text-anchor="middle">gadget port, A-to-A</text>
+
+      <rect class="bx" x="386" y="132" width="150" height="46" rx="3"/>
+      <text class="lb" x="461" y="152" text-anchor="middle">/dev/hidg0,1</text>
+      <text class="sm" x="461" y="167" text-anchor="middle">kbd + abs pointer</text>
+
+      <rect class="bx" x="256" y="196" width="224" height="34" rx="3"/>
+      <text class="lb" x="368" y="217" text-anchor="middle">kvm-ui :8081</text>
+
+      <!-- browser -->
+      <rect class="bx" x="620" y="78" width="132" height="92" rx="4"/>
+      <text class="lh" x="686" y="106" text-anchor="middle">browser</text>
+      <text class="sm" x="686" y="126" text-anchor="middle">one page,</text>
+      <text class="sm" x="686" y="139" text-anchor="middle">no plugins</text>
+
+      <!-- flows -->
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M120 96 H190"/>
+      <text class="sm" x="155" y="88" text-anchor="middle">HDMI</text>
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M346 79 H380"/>
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M536 79 H600 V96 H614"/>
+
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M614 152 H556"/>
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M386 155 H352"/>
+      <path class="ar" stroke="var(--gold)" marker-end="url(#a)" d="M190 155 H126 V150"/>
+      <text class="sm" x="155" y="171" text-anchor="middle">USB HID</text>
+    </svg>
+    <figcaption>Video left-to-right, input right-to-left. They only meet in the browser.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2 class="sect">The one constraint that shapes everything</h2>
+  <p class="sect-note">
+    The SoC has four USB controllers and <strong>only one can be a gadget</strong> — and on a
+    stock box it is invariably the socket that already has everything plugged into it. Move
+    your hub to the xHCI socket first; that frees dwc2 to become the gadget port.
+  </p>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>controller</th><th>device-tree node</th><th>gadget?</th><th>on a stock box</th></tr></thead>
+      <tbody>
+        <tr><td><b>dwc2</b></td><td><code>usb@ff580000</code></td><td class="yes">✔ the only candidate</td><td>everything is plugged in here</td></tr>
+        <tr><td>dwc3 / xHCI</td><td><code>usb@ff600000</code></td><td class="no">✘ host-only as wired</td><td>usually empty</td></tr>
+        <tr><td>EHCI</td><td><code>usb@ff5c0000</code></td><td class="no">✘</td><td>usually empty</td></tr>
+        <tr><td>OHCI</td><td><code>usb@ff5d0000</code></td><td class="no">✘</td><td>usually empty</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sect-note" style="margin-top:1.4rem">
+    There is also a <strong>VBUS back-feed hazard</strong>: these boxes actively source 5&nbsp;V
+    onto the OTG port, so cabling it to a PC puts two supplies on one rail. The overlay
+    disables that regulator — VBUS stays sensed, but no longer sourced. Read
+    <a href="docs/01-hardware.md">the hardware notes</a> before connecting anything you care about.
+  </p>
+</section>
+
+<section>
+  <h2 class="sect">Quickstart</h2>
+  <p class="sect-note">Replace <code>&lt;box-ip&gt;</code> with your box's address.</p>
+  <pre><span class="c"># 1. move the USB hub to the xHCI socket -- this frees dwc2</span>
+<span class="c"># 2. build and install the OTG overlay</span>
+dtc -@ -I dts -O dtb -o rk3318-otg-peripheral.dtbo \
+    overlays/rk3318-otg-peripheral.dts
+scp rk3318-otg-peripheral.dtbo root@<b>&lt;box-ip&gt;</b>:/boot/overlay-user/
+
+<span class="c"># 3. install the gadget, capture and UI, then reboot</span>
+scp bin/hid-gadget-up root@<b>&lt;box-ip&gt;</b>:/usr/local/sbin/
+scp bin/hid-send bin/kvm-ui.py root@<b>&lt;box-ip&gt;</b>:/usr/local/bin/
+scp systemd/*.service root@<b>&lt;box-ip&gt;</b>:/etc/systemd/system/
+ssh root@<b>&lt;box-ip&gt;</b> 'systemctl enable hid-gadget kvm-stream kvm-ui &amp;&amp; reboot'
+
+<span class="c"># 4. verify, then open http://&lt;box-ip&gt;:8081/</span>
+ssh root@<b>&lt;box-ip&gt;</b> 'ls /sys/class/udc/ &amp;&amp; ls -l /dev/hidg0 /dev/hidg1'</pre>
+  <p class="sect-note" style="margin-top:1.2rem">
+    There's a CLI seam too, independent of the browser —
+    <code>hid-send type "hello"</code>, <code>hid-send key ctrl+alt+delete</code>,
+    <code>hid-send move 50% 50%</code>.
+  </p>
+</section>
+
+<section>
+  <h2 class="sect">Documentation</h2>
+  <p class="sect-note">Each page is standalone; start wherever your problem is.</p>
+  <div class="docs">
+    <a class="doc" href="docs/01-hardware.md"><span class="n">01</span><span class="t">Hardware &amp; port map<small>which socket is dwc2 · the VBUS hazard · BOM</small></span></a>
+    <a class="doc" href="docs/02-armbian-base.md"><span class="n">02</span><span class="t">Armbian base<small>load-bearing overlays you must not remove</small></span></a>
+    <a class="doc" href="docs/03-hdmi-capture.md"><span class="n">03</span><span class="t">HDMI capture<small>MS2109 + ustreamer</small></span></a>
+    <a class="doc" href="docs/04-usb-hid-gadget.md"><span class="n">04</span><span class="t">USB HID gadget<small>dwc2 → peripheral · configfs · HID descriptors</small></span></a>
+    <a class="doc" href="docs/05-web-ui.md"><span class="n">05</span><span class="t">The web UI<small>input model · the no-host path · kvmd upgrade</small></span></a>
+    <a class="doc" href="docs/06-displaylink-console.md"><span class="n">06</span><span class="t">DisplayLink console<small>evdi + the invisible-cursor fix</small></span></a>
+    <a class="doc" href="docs/07-front-panel-display.md"><span class="n">07</span><span class="t">Front panel<small>FD628 + tm16xx · LED triggers · the clock</small></span></a>
+  </div>
+</section>
+
+<section>
+  <h2 class="sect">Two upstream bugs found along the way</h2>
+  <p class="sect-note">Both written up report-ready, with the exact evidence and a suggested patch.</p>
+  <div class="bug">
+    <h3>Armbian's rk3318 front-panel overlay cannot work as shipped</h3>
+    <p>
+      <code>rockchip-rk3318-box-led-conf2.dtbo</code> puts an I2C slave address in an SPI
+      child's <code>reg</code> (rejected as <code>cs36 &gt;= max 1</code>) <em>and</em> uses a
+      <code>compatible</code> no driver matches. Either alone is fatal. Identical across at
+      least <code>rockchip64-6.12</code> → <code>7.2</code>, so every box selecting it has a
+      dead panel — silently. <a href="docs/bug-armbian-rk3318-led-conf2.md">Full report →</a>
+    </p>
+  </div>
+  <div class="bug">
+    <h3>tm16xx's out-of-tree build breaks on unpatched kernels</h3>
+    <p>
+      It ships the full mainline <code>auxdisplay</code> Makefile, so an <code>M=</code>
+      build demands sources it lacks; and it passes its <code>-D</code> flags via
+      <code>EXTRA_CFLAGS</code>, which modern kbuild ignores. The second is nasty because
+      it's split-brain rather than clean — the config reaches <em>make</em> but not the
+      <em>compiler</em>, so you get a redefinition error that reads like a source bug.
+      <a href="docs/bug-tm16xx-out-of-tree-build.md">Full report →</a>
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2 class="sect">What's actually verified</h2>
+  <p class="sect-note">
+    Honest accounting, because "it works" in DIY hardware writeups is usually softer than it
+    looks.
+  </p>
+  <div class="two">
+    <div class="ok">
+      <h3>Verified on real hardware, across reboots</h3>
+      <ul>
+        <li>Gadget enumerates — <code>/dev/hidg0</code> + <code>hidg1</code> present,
+            presenting as a composite keyboard + absolute pointer.</li>
+        <li>ustreamer serving MJPEG, surviving the USB renumbering the overlay causes.</li>
+        <li>UI: page, WebSocket handshake, every event type, malformed input, and the
+            no-host path.</li>
+        <li>DisplayLink console with a <em>visible</em> cursor — confirmed by the
+            compositor's own log line and an A/B on cursor-plane commits (30+ → 0).</li>
+        <li>Front panel: 4-digit clock tracking wall time, 5 LEDs with triggers.</li>
+      </ul>
+    </div>
+    <div class="gap">
+      <h3>Not verified / known gaps</h3>
+      <ul>
+        <li><strong>Typing into a real target PC.</strong> Everything gadget-side was tested
+            headless; whether keystrokes land, and where the absolute pointer lands at your
+            target's resolution, needs a cabled machine.</li>
+        <li>No authentication, no TLS. No audio, mass-storage emulation, or ATX power
+            control — all of which PiKVM has and this does not.</li>
+        <li>One box, one Armbian build. RK3318 boxes vary <em>wildly</em>, especially the
+            front panel — Armbian ships <strong>seven</strong> different LED configurations.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <!-- FOOTER: matches the house idiom (centered, muted, small, subtle top rule,
+       dot-separated siblings row + a single closing line). See the report note --
+       there is no single canonical share footer across the projects, and the
+       repo URLs below are PLACEHOLDERS pending a decision on public identity. -->
+  <div class="siblings">
+    <a href="https://github.com/OWNER/rk3318-tvbox-kvm">source</a> ·
+    <a href="docs/01-hardware.md">docs</a> ·
+    <a href="https://pikvm.org/">pikvm</a> ·
+    <a href="https://www.armbian.com/">armbian</a>
+  </div>
+  <div class="line">a twenty dollar box, a soldering-free afternoon, and one fewer trip to the server closet.</div>
+  <div class="lic">MIT licensed · not affiliated with PiKVM, Armbian, or any hardware vendor</div>
+</footer>
+
+</div>
+</body>
+</html>
