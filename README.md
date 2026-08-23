@@ -9,6 +9,8 @@ controller (so it can *pretend to be* a keyboard), a second xHCI port to keep th
 stick and dock on, HDMI **in** via a $10 MS2109 stick, and a front panel with a real
 FD628 display. Total cost is well under a Raspberry Pi you can't buy.
 
+**📖 Build guide, rendered: <https://jphein.github.io/rk3318-tvbox-kvm/>**
+
 > **Search terms, so this is findable:** rk3318 pikvm · rk3318 ip-kvm · rk3328 usb gadget ·
 > tv box kvm · armbian dwc2 peripheral · ms2109 ustreamer · rk3318 front panel led ·
 > fd628 tm16xx armbian · displaylink evdi invisible cursor
@@ -84,7 +86,7 @@ how to identify each socket without a datasheet: [docs/01-hardware.md](docs/01-h
 Replace `<box-ip>` with your box's address throughout.
 
 ```bash
-git clone <this-repo> && cd rk3318-tvbox-kvm
+git clone https://github.com/jphein/rk3318-tvbox-kvm && cd rk3318-tvbox-kvm
 
 # 1. Move your USB hub to the xHCI socket (see docs/01-hardware.md). This frees dwc2.
 # 2. Build and install the OTG overlay, then reboot:
@@ -102,7 +104,12 @@ scp systemd/hid-gadget.service systemd/kvm-stream.service systemd/kvm-ui.service
 ssh root@<box-ip> 'systemctl daemon-reload &&
     systemctl enable hid-gadget kvm-stream kvm-ui && reboot'
 
-# 4. Verify, then open http://<box-ip>:8081/
+# 4. Optional: the units' Documentation= fields point here, so put the docs
+#    where they say. Purely a convenience for `systemctl status`.
+ssh root@<box-ip> 'mkdir -p /usr/local/share/doc/rk3318-tvbox-kvm'
+scp docs/*.md root@<box-ip>:/usr/local/share/doc/rk3318-tvbox-kvm/
+
+# 5. Verify, then open http://<box-ip>:8081/
 ssh root@<box-ip> 'ls /sys/class/udc/ && ls -l /dev/hidg0 /dev/hidg1'
 ```
 
