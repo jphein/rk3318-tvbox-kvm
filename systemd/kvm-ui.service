@@ -1,0 +1,28 @@
+[Unit]
+Description=Thin web KVM UI (joins ustreamer capture + USB HID gadget)
+Documentation=file:///usr/local/share/doc/rk3318-tvbox-kvm/04-usb-hid-gadget.md
+# Ordered AFTER the gadget so /dev/hidg* usually exist by the time we start.
+# Wants (not Requires): if hid-gadget is down, kvm-ui still serves the page and
+# shows the "no target attached" banner -- degraded, not dead. And it must never
+# be able to drag hid-gadget, kvm-stream or displaylink-driver down with it.
+After=network-online.target hid-gadget.service
+Wants=hid-gadget.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/kvm-ui.py
+Restart=on-failure
+RestartSec=3
+# Needs root: /dev/hidg* are 0600 root:root.
+User=root
+# Modest hardening -- deliberately NOT PrivateDevices (we need /dev/hidg*).
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+# It only ever needs to read the page out of its own source + write /dev/hidg*.
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
