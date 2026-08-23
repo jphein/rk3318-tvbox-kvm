@@ -1,0 +1,17 @@
+[Unit]
+Description=ustreamer MJPEG stream from MS2109 HDMI capture
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/ustreamer \
+  --device=/dev/v4l/by-id/usb-MACROSILICON_USB_Video-video-index0 \
+  --format=mjpeg \
+  --resolution=1920x1080 \
+  --host=0.0.0.0 \
+  --port=8080 \
+  --drop-same-frames=30
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
