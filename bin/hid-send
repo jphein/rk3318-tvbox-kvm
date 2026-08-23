@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""
+hid-send -- minimal driver seam for the rk3318 HID gadget.
+
+Install to /usr/local/bin/hid-send (mode 0755).
+
+    hid-send type "hello world"      # type a string
+    hid-send key enter               # one named key
+    hid-send key ctrl+alt+delete     # modifier combo
+    hid-send move 16384 16384        # absolute pointer, 0..32767 both axes
+    hid-send move 50% 50%            # same thing, as a percentage
+    hid-send click                   # left click (or: click right|middle)
+    hid-send scroll -3               # wheel
+
+Writes raw HID reports to /dev/hidg0 (keyboard) and /dev/hidg1 (pointer).
+A later kvmd layer can replace this entirely -- it is deliberately dumb.
+
+With NO host attached, writes fail with EAGAIN or ESHUTDOWN. That is expected,
+not a bug: a gadget has nowhere to send reports until a host enumerates it.
+hid-send reports that condition clearly and exits 3.
+"""
+import os, sys, time
+
+KBD = "/dev/hidg0"
+PTR = "/dev/hidg1"
+
+# --- HID usage tables -------------------------------------------------------
+MOD = {"ctrl": 0x01, "control": 0x01, "shift": 0x02, "alt": 0x04,
+       "gui": 0x08, "meta": 0x08, "super": 0x08, "win": 0x08,
+       "rctrl": 0x10, "rshift": 0x20, "ralt": 0x40, "rgui": 0x80}
+
+NAMED = {
+    "a":0x04,"b":0x05,"c":0x06,"d":0x07,"e":0x08,"f":0x09,"g":0x0a,"h":0x0b,
+    "i":0x0c,"j":0x0d,"k":0x0e,"l":0x0f,"m":0x10,"n":0x11,"o":0x12,"p":0x13,
+    "q":0x14,"r":0x15,"s":0x16,"t":0x17,"u":0x18,"v":0x19,"w":0x1a,"x":0x1b,
+    "y":0x1c,"z":0x1d,
+    "1":0x1e,"2":0x1f,"3":0x20,"4":0x21,"5":0x22,"6":0x23,"7":0x24,"8":0x25,
+    "9":0x26,"0":0x27,
+    "enter":0x28,"return":0x28,"esc":0x29,"escape":0x29,"backspace":0x2a,
+    "tab":0x2b,"space":0x2c,"minus":0x2d,"equal":0x2e,
+    "leftbrace":0x2f,"rightbrace":0x30,"backslash":0x31,"semicolon":0x33,
+    "apostrophe":0x34,"grave":0x35,"comma":0x36,"dot":0x37,"slash":0x38,
+    "capslock":0x39,
+    "f1":0x3a,"f2":0x3b,"f3":0x3c,"f4":0x3d,"f5":0x3e,"f6":0x3f,
+    "f7":0x40,"f8":0x41,"f9":0x42,"f10":0x43,"f11":0x44,"f12":0x45,
+    "printscreen":0x46,"scrolllock":0x47,"pause":0x48,"insert":0x49,
+    "home":0x4a,"pageup":0x4b,"delete":0x4c,"end":0x4d,"pagedown":0x4e,
+    "right":0x4f,"left":0x50,"down":0x51,"up":0x52,"numlock":0x53,
+}
+
+# printable ASCII -> (usage, needs_shift)
+_UNSHIFTED = ("abcdefghijklmnopqrstuvwxyz", 0x04)
+ASCII = {}
+for i, ch in enumerate(_UNSHIFTED[0]):
+    ASCII[ch] = (_UNSHIFTED[1] + i, False)
+    ASCII[ch.upper()] = (_UNSHIFTED[1] + i, True)
+for i, ch in enumerate("1234567890"):
+    ASCII[ch] = (0x1e + i, False)
+for ch, u in zip("!@#$%^&*()", range(0x1e, 0x28)):
+    ASCII[ch] = (u, True)
+for ch, u in [("\n",0x28),("\t",0x2b),(" ",0x2c),
+              ("-",0x2d),("=",0x2e),("[",0x2f),("]",0x30),("\\",0x31),
+              (";",0x33),("'",0x34),("`",0x35),(",",0x36),(".",0x37),("/",0x38)]:
+    ASCII[ch] = (u, False)
+for ch, u in [("_",0x2d),("+",0x2e),("{",0x2f),("}",0x30),("|",0x31),
+              (":",0x33),('"',0x34),("~",0x35),("<",0x36),(">",0x37),("?",0x38)]:
+    ASCII[ch] = (u, True)
+
+
+def _write(path, data):
+    try:
+        with open(path, "wb", buffering=0) as f:
+            f.write(data)
+    except FileNotFoundError:
+        die(f"{path} does not exist -- is hid-gadget.service running?", 2)
+    except OSError as e:
+        # EAGAIN(11)/ESHUTDOWN(108)/EPIPE(32) == no host on the other end
+        if e.errno in (11, 32, 108):
+            die(f"no USB host attached ({e.strerror}). Plug the OTG port into a "
+                f"target PC. This is expected when nothing is connected.", 3)
+        die(f"write to {path} failed: {e}", 4)
+
+
+def die(msg, code=1):
+    print(f"hid-send: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+# --- keyboard ---------------------------------------------------------------
+def kbd_report(mods=0, keys=()):
+    k = list(keys)[:6] + [0] * (6 - len(keys[:6]))
+    return bytes([mods & 0xFF, 0] + k)
+
+
+def tap(mods, usage, hold=0.008):
+    _write(KBD, kbd_report(mods, [usage]))
+    time.sleep(hold)
+    _write(KBD, kbd_report())          # all-up
+    time.sleep(hold)
+
+
+def do_type(text):
+    for ch in text:
+        e = ASCII.get(ch)
+        if e is None:
+            print(f"hid-send: skipping untypable char {ch!r}", file=sys.stderr)
+            continue
+        usage, shift = e
+        tap(MOD["shift"] if shift else 0, usage)
+
+
+def do_key(spec):
+    parts = spec.lower().split("+")
+    mods, usage = 0, None
+    for p in parts:
+        if p in MOD:
+            mods |= MOD[p]
+        elif p in NAMED:
+            usage = NAMED[p]
+        else:
+            die(f"unknown key {p!r}. Known: {', '.join(sorted(NAMED))}")
+    if usage is None:
+        die(f"{spec!r} has modifiers but no key")
+    tap(mods, usage)
+
+
+# --- pointer ---------------------------------------------------------------
+def _coord(v):
+    v = v.strip()
+    if v.endswith("%"):
+        return max(0, min(32767, round(float(v[:-1]) / 100.0 * 32767)))
+    n = int(v)
+    if not 0 <= n <= 32767:
+        die(f"coordinate {n} out of range 0..32767")
+    return n
+
+
+def ptr_report(buttons=0, x=0, y=0, wheel=0):
+    return bytes([buttons & 0x1F,
+                  x & 0xFF, (x >> 8) & 0xFF,
+                  y & 0xFF, (y >> 8) & 0xFF,
+                  wheel & 0xFF])
+
+
+_LAST = [0, 0]   # remember position so click/scroll don't warp to 0,0
+
+
+def do_move(xs, ys):
+    x, y = _coord(xs), _coord(ys)
+    _LAST[:] = [x, y]
+    _write(PTR, ptr_report(0, x, y, 0))
+
+
+def do_click(which="left"):
+    bit = {"left": 0x01, "right": 0x02, "middle": 0x04}.get(which)
+    if bit is None:
+        die(f"unknown button {which!r} (left|right|middle)")
+    x, y = _LAST
+    _write(PTR, ptr_report(bit, x, y, 0))
+    time.sleep(0.02)
+    _write(PTR, ptr_report(0, x, y, 0))
+
+
+def do_scroll(n):
+    x, y = _LAST
+    _write(PTR, ptr_report(0, x, y, int(n)))
+    time.sleep(0.01)
+    _write(PTR, ptr_report(0, x, y, 0))
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(0)
+    cmd, args = sys.argv[1], sys.argv[2:]
+    if cmd == "type":
+        if not args: die("type needs a string")
+        do_type(" ".join(args))
+    elif cmd == "key":
+        if not args: die("key needs a key name")
+        for a in args: do_key(a)
+    elif cmd == "move":
+        if len(args) != 2: die("move needs X and Y")
+        do_move(*args)
+    elif cmd == "click":
+        do_click(args[0] if args else "left")
+    elif cmd == "scroll":
+        if not args: die("scroll needs an amount")
+        do_scroll(args[0])
+    else:
+        die(f"unknown command {cmd!r} (type|key|move|click|scroll)")
+
+
+if __name__ == "__main__":
+    main()

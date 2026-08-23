@@ -1,0 +1,109 @@
+#!/bin/bash
+# hid-gadget-up -- bring up a PiKVM-style composite HID gadget (keyboard +
+# absolute pointer) on the rk3318 box's dwc2 UDC.
+#
+# Install to /usr/local/sbin/hid-gadget-up (mode 0755). Driven by hid-gadget.service.
+# Requires dr_mode=peripheral (or otg) on usb@ff580000 -- see docs/04-usb-hid-gadget.md.
+#
+# Creates /dev/hidg0 (keyboard, 8-byte boot reports)
+#         /dev/hidg1 (absolute pointer, 6-byte reports)
+
+set -euo pipefail
+
+G=/sys/kernel/config/usb_gadget/kvm
+CFS=/sys/kernel/config
+
+log() { echo "hid-gadget-up: $*" >&2; }
+
+# --- teardown path, so the unit is restartable -------------------------------
+down() {
+	[ -d "$G" ] || return 0
+	# unbind first; writing "" to UDC is how you detach
+	if [ -s "$G/UDC" ]; then echo "" > "$G/UDC" 2>/dev/null || true; fi
+	rm -f "$G"/configs/c.1/hid.* 2>/dev/null || true
+	rmdir "$G"/configs/c.1/strings/0x409 2>/dev/null || true
+	rmdir "$G"/configs/c.1 2>/dev/null || true
+	rmdir "$G"/functions/hid.kbd 2>/dev/null || true
+	rmdir "$G"/functions/hid.mouse 2>/dev/null || true
+	rmdir "$G"/strings/0x409 2>/dev/null || true
+	rmdir "$G" 2>/dev/null || true
+	log "torn down"
+}
+[ "${1:-up}" = "down" ] && { down; exit 0; }
+
+# --- prerequisites ----------------------------------------------------------
+modprobe libcomposite 2>/dev/null || true
+mountpoint -q "$CFS" || mount -t configfs none "$CFS"
+
+# Wait briefly for a UDC to appear (dwc2 may still be probing at boot).
+for i in $(seq 1 50); do
+	UDC=$(ls /sys/class/udc 2>/dev/null | head -n1 || true)
+	[ -n "${UDC:-}" ] && break
+	sleep 0.2
+done
+if [ -z "${UDC:-}" ]; then
+	log "FATAL: no UDC in /sys/class/udc."
+	log "  dwc2 is probably still dr_mode=\"host\". Check:"
+	log "    tr -d '\\0' < /proc/device-tree/usb@ff580000/dr_mode"
+	log "  and install the rk3318-otg-peripheral overlay (see docs/04-usb-hid-gadget.md)."
+	exit 1
+fi
+log "using UDC: $UDC"
+
+down   # idempotent
+
+# --- gadget ----------------------------------------------------------------
+mkdir -p "$G"
+cd "$G"
+
+# 1d6b:0104 = Linux Foundation / Multifunction Composite Gadget.
+# Generic, driverless on Windows/macOS/Linux for plain boot-protocol HID.
+echo 0x1d6b > idVendor
+echo 0x0104 > idProduct
+echo 0x0100 > bcdDevice
+echo 0x0200 > bcdUSB
+
+mkdir -p strings/0x409
+echo "rk3318-kvm"                  > strings/0x409/manufacturer
+echo "rk3318 KVM HID"              > strings/0x409/product
+# stable serial derived from the machine-id, so the target PC sees one device
+echo "$(cut -c1-16 /etc/machine-id 2>/dev/null || echo 0123456789abcdef)" \
+                                   > strings/0x409/serialnumber
+
+# --- keyboard: canonical 8-byte boot-protocol descriptor --------------------
+# modifiers(1) reserved(1) keycode[6]
+mkdir -p functions/hid.kbd
+echo 1 > functions/hid.kbd/protocol    # 1 = keyboard
+echo 1 > functions/hid.kbd/subclass    # 1 = boot interface subclass
+echo 8 > functions/hid.kbd/report_length
+printf '%b' \
+'\x05\x01\x09\x06\xa1\x01\x05\x07\x19\xe0\x29\xe7\x15\x00\x25\x01\x75\x01\x95\x08\x81\x02\x95\x01\x75\x08\x81\x01\x95\x06\x75\x08\x15\x00\x25\x65\x05\x07\x19\x00\x29\x65\x81\x00\xc0' \
+	> functions/hid.kbd/report_desc
+
+# --- absolute pointer: 6-byte reports --------------------------------------
+# buttons(1: 5 bits + 3 pad) absX(2, 0..32767) absY(2, 0..32767) wheel(1, rel)
+# Absolute (not relative) is what makes remote pointing usable -- the host maps
+# 0..32767 across the screen, so no pointer-acceleration drift to fight.
+mkdir -p functions/hid.mouse
+echo 2 > functions/hid.mouse/protocol  # 2 = mouse
+echo 0 > functions/hid.mouse/subclass  # 0 = no boot subclass (abs pointer)
+echo 6 > functions/hid.mouse/report_length
+printf '%b' \
+'\x05\x01\x09\x02\xa1\x01\x09\x01\xa1\x00\x05\x09\x19\x01\x29\x05\x15\x00\x25\x01\x95\x05\x75\x01\x81\x02\x95\x01\x75\x03\x81\x01\x05\x01\x09\x30\x09\x31\x16\x00\x00\x26\xff\x7f\x75\x10\x95\x02\x81\x02\x09\x38\x15\x81\x25\x7f\x75\x08\x95\x01\x81\x06\xc0\xc0' \
+	> functions/hid.mouse/report_desc
+
+# --- config ---------------------------------------------------------------
+mkdir -p configs/c.1/strings/0x409
+echo "HID keyboard + pointer" > configs/c.1/strings/0x409/configuration
+echo 250                      > configs/c.1/MaxPower   # mA, bus-powered claim
+
+# link order fixes the hidg numbering: kbd -> hidg0, mouse -> hidg1
+ln -s functions/hid.kbd   configs/c.1/
+ln -s functions/hid.mouse configs/c.1/
+
+echo "$UDC" > UDC
+
+log "bound to $UDC"
+for d in /dev/hidg0 /dev/hidg1; do
+	[ -e "$d" ] && log "  $d present" || log "  WARNING: $d missing"
+done

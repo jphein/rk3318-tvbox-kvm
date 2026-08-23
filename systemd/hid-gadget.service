@@ -1,0 +1,22 @@
+[Unit]
+Description=PiKVM-style USB HID gadget (keyboard + absolute pointer)
+Documentation=file:///usr/local/share/doc/rk3318-tvbox-kvm/04-usb-hid-gadget.md
+# configfs must be up; dwc2 must have probed and registered a UDC.
+After=sys-kernel-config.mount local-fs.target
+Wants=sys-kernel-config.mount
+# Deliberately NOT related to kvm-stream.service or displaylink-driver.service:
+# this unit must never be able to take those down.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/hid-gadget-up up
+ExecStop=/usr/local/sbin/hid-gadget-up down
+# dwc2 can be slow to register the UDC on cold boot; the script polls for 10 s,
+# but if it loses the race let systemd retry rather than leaving no gadget.
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

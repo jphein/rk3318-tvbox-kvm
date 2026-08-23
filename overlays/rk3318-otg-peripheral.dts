@@ -1,0 +1,32 @@
+/*
+ * rk3318-otg-peripheral.dtso
+ *
+ * Flips the RK3318/RK3328 dwc2 OTG controller (usb@ff580000) from the TV-box
+ * DTB's dr_mode = "host" to "peripheral", so it registers a UDC and can act as
+ * a USB gadget (keyboard/mouse) toward another computer.
+ *
+ * ALSO disables the vcc_otg_vbus fixed regulator. That regulator is
+ * `regulator-always-on` and parks gpiochip0 line 27 HIGH, i.e. the box actively
+ * drives 5 V onto the OTG port's VBUS pin. When you cable that port to a target
+ * PC, the PC also drives 5 V -- two sources fighting on one rail. Nothing in the
+ * DT references vcc_otg_vbus (verified: zero phandle references), so disabling
+ * its node is safe; the pin is simply never driven. VBUS *from the PC* still
+ * reaches the PHY, which is what dwc2 needs to detect the session.
+ *
+ * WARNING: applying this makes the dwc2 port device-only. Anything currently
+ * plugged into it (hub, DisplayLink dock, capture stick) STOPS WORKING.
+ * Read docs/04-usb-hid-gadget.md before installing.
+ *
+ * Build: dtc -@ -I dts -O dtb -o rk3318-otg-peripheral.dtbo rk3318-otg-peripheral.dts
+ */
+
+/dts-v1/;
+/plugin/;
+
+&usb20_otg {
+	dr_mode = "peripheral";
+};
+
+&vcc_otg_vbus {
+	status = "disabled";
+};
