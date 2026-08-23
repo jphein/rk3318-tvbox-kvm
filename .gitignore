@@ -1,0 +1,17 @@
+# compiled device-tree overlays -- build them from overlays/*.dts
+*.dtbo
+*.dtb
+
+# kernel module build leftovers
+*.ko
+*.o
+*.mod
+*.mod.c
+.*.cmd
+modules.order
+Module.symvers
+
+__pycache__/
+*.pyc
+*~
+.DS_Store
