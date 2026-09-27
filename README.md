@@ -183,5 +183,6 @@ than they look:
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The bundled `hid-send`, `hid-gadget-up`, `kvm-ui.py`,
-`panel-*` scripts and DT overlays are all original to this project.
+AGPL-3.0-or-later © 2026 Jeffrey Pine Hein. See [LICENSE](LICENSE).
+
+The bundled `hid-send`, `hid-gadget-up`, `kvm-ui.py`, `panel-*` scripts and DT overlays are all original to this project.
